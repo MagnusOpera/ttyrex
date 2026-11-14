@@ -134,24 +134,6 @@ pub const Window = extern struct {
             );
         };
 
-        pub const @"quick-terminal" = struct {
-            pub const name = "quick-terminal";
-            const impl = gobject.ext.defineProperty(
-                name,
-                Self,
-                bool,
-                .{
-                    .default = true,
-                    .accessor = gobject.ext.privateFieldAccessor(
-                        Self,
-                        Private,
-                        &Private.offset,
-                        "quick_terminal",
-                    ),
-                },
-            );
-        };
-
         pub const @"tabs-autohide" = struct {
             pub const name = "tabs-autohide";
             const impl = gobject.ext.defineProperty(
@@ -245,10 +227,6 @@ pub const Window = extern struct {
     };
 
     const Private = struct {
-        /// Whether this window is a quick terminal. If it is then it
-        /// behaves slightly differently under certain scenarios.
-        quick_terminal: bool = false,
-
         /// Timeout source to react to this window becoming (in)active.
         handle_active_state_source: ?c_uint = null,
 
@@ -644,12 +622,6 @@ pub const Window = extern struct {
         tab_overview.setOpen(@intFromBool(!is_open));
     }
 
-    /// Toggle the visible property.
-    pub fn toggleVisibility(self: *Self) void {
-        const widget = self.as(gtk.Widget);
-        widget.setVisible(@intFromBool(widget.isVisible() == 0));
-    }
-
     /// Updates various appearance properties. This should always be safe
     /// to call multiple times. This should be called whenever a change
     /// happens that might affect how the window appears (config change,
@@ -891,18 +863,6 @@ pub const Window = extern struct {
         const priv = self.private();
         priv.handle_active_state_source = null;
 
-        // Hide quick-terminal if set to autohide
-        if (self.isQuickTerminal()) {
-            if (self.getConfig()) |cfg| {
-                if (cfg.get().@"quick-terminal-autohide" and
-                    self.as(gtk.Window).isActive() == 0 and
-                    self.as(gtk.Widget).isVisible() == 1)
-                {
-                    self.toggleVisibility();
-                }
-            }
-        }
-
         // Don't change urgency if we're not the active window.
         if (self.as(gtk.Window).isActive() == 0) return 0;
 
@@ -917,11 +877,6 @@ pub const Window = extern struct {
 
     //---------------------------------------------------------------
     // Properties
-
-    /// Whether this terminal is a quick terminal or not.
-    pub fn isQuickTerminal(self: *Self) bool {
-        return self.private().quick_terminal;
-    }
 
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.
@@ -958,8 +913,7 @@ pub const Window = extern struct {
         surface: *Surface,
         size: apprt.action.ResizeWindow,
     ) bool {
-        if (self.isQuickTerminal() or
-            self.isMaximized() or
+        if (self.isMaximized() or
             self.isFullscreen() or
             self.isTiled()) return false;
         if (self.getTabView().getNPages() != 1) return false;
@@ -1075,9 +1029,6 @@ pub const Window = extern struct {
         // Never display the header bar when CSDs are disabled.
         const csd_enabled = priv.winproto.clientSideDecorationEnabled();
         if (!csd_enabled) return false;
-
-        // Never display the header bar as a quick terminal.
-        if (priv.quick_terminal) return false;
 
         // If we're fullscreen we never show the header bar.
         if (self.isFullscreen()) return false;
@@ -1212,11 +1163,7 @@ pub const Window = extern struct {
                 // that, depending on the backend and system performance, a
                 // shorter timeout or just an idle callback can be enough for
                 // the focus to settle. On the other hand a delay of e.g. 10ms
-                // does not work reliably on some slow systems. The downside
-                // of a high value is that some operations in handleActiveState,
-                // e.g. hiding the quick-terminal, will be visibly delayed.
-                // However, 50ms should barely be noticeable. We can change
-                // this in the future if necessary.
+                // does not work reliably on some slow systems.
                 50,
                 handleActiveState,
                 self,
@@ -1245,10 +1192,9 @@ pub const Window = extern struct {
         size: *gdk.ToplevelSize,
         self: *Self,
     ) callconv(.c) void {
-        // The compositor/quick terminal own the size in these states.
+        // The compositor owns the size in these states.
         if (self.isMaximized() or
-            self.isFullscreen() or
-            self.isQuickTerminal()) return;
+            self.isFullscreen()) return;
 
         // Let GTK apply the default size set by a requested resize.
         const priv = self.private();
@@ -1306,26 +1252,6 @@ pub const Window = extern struct {
         if (!active) return;
 
         self.syncActions();
-    }
-
-    fn propQuickTerminal(
-        _: *adw.ApplicationWindow,
-        _: *gobject.ParamSpec,
-        self: *Self,
-    ) callconv(.c) void {
-        const priv = self.private();
-        if (priv.surface_init) {
-            log.warn("quick terminal property can't be changed after surfaces have been initialized", .{});
-            return;
-        }
-
-        if (priv.quick_terminal) {
-            // Initialize the quick terminal at the app-layer
-            Application.default().winproto().initQuickTerminal(self) catch |err| {
-                log.warn("failed to initialize quick terminal error={}", .{err});
-                return;
-            };
-        }
     }
 
     fn propScaleFactor(
@@ -2349,7 +2275,6 @@ pub const Window = extern struct {
                 properties.config.impl,
                 properties.debug.impl,
                 properties.@"headerbar-visible".impl,
-                properties.@"quick-terminal".impl,
                 properties.@"tabs-autohide".impl,
                 properties.@"tabs-inverted".impl,
                 properties.@"tabs-visible".impl,
@@ -2384,7 +2309,6 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_is_active", &propIsActive);
             class.bindTemplateCallback("notify_maximized", &propMaximized);
             class.bindTemplateCallback("notify_menu_active", &propMenuActive);
-            class.bindTemplateCallback("notify_quick_terminal", &propQuickTerminal);
             class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
             class.bindTemplateCallback("titlebar_style_is_tabs", &closureTitlebarStyleIsTab);
             class.bindTemplateCallback("computed_title", &closureTitle);
