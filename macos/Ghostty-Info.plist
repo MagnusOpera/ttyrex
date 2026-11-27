@@ -106,6 +106,12 @@
 	</array>
 	<key>SUEnableAutomaticChecks</key>
 	<false/>
+	<key>SUPublicEDKey</key>
+	<string>0zpl8SYqvp0QQtX8neaTzYK2jnL9hPbwxF4PJWbAvsI=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
